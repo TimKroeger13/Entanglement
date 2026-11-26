@@ -50,7 +50,7 @@ cd entanglement
 cp .env.example .env
 openssl rand -hex 32          # paste the output as ENTANGLEMENT_TOKEN in .env
 docker compose up -d --build
-curl http://127.0.0.1:8080/health   # -> ok
+curl http://127.0.0.1:8423/health   # -> ok
 docker image prune -f && docker builder prune -f   # drop the Go build image (~300 MB)
 ```
 
@@ -77,7 +77,7 @@ server {
     client_max_body_size 16m;
 
     location / {
-        proxy_pass http://127.0.0.1:8080;
+        proxy_pass http://127.0.0.1:8423;
         proxy_set_header Host $host;
         proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
         proxy_set_header X-Forwarded-Proto $scheme;

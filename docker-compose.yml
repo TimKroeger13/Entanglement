@@ -10,7 +10,7 @@ services:
       - entanglement-data:/data
     ports:
       # Only reachable from the host itself; Nginx proxies to it.
-      - "127.0.0.1:${ENTANGLEMENT_PORT:-8080}:8080"
+      - "127.0.0.1:${ENTANGLEMENT_PORT:-8423}:8080"
 
 volumes:
   entanglement-data:
