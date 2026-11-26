@@ -1,0 +1,21 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Two interlocked rings (same geometry as desktopApp/icons/make_icon.py), inside the 66dp safe zone. -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="108"
+    android:viewportHeight="108">
+    <path
+        android:pathData="M31.65,54 a13.35,13.35 0 1,0 26.7,0 a13.35,13.35 0 1,0 -26.7,0"
+        android:strokeWidth="5.7"
+        android:strokeColor="#7C5CFF" />
+    <path
+        android:pathData="M49.65,54 a13.35,13.35 0 1,0 26.7,0 a13.35,13.35 0 1,0 -26.7,0"
+        android:strokeWidth="5.7"
+        android:strokeColor="#00B8BE" />
+    <!-- Violet back on top at the lower crossing: the rings interlock. -->
+    <path
+        android:pathData="M57.10,59.64 A13.35,13.35 0 0,1 49.57,66.54"
+        android:strokeWidth="5.7"
+        android:strokeColor="#7C5CFF" />
+</vector>

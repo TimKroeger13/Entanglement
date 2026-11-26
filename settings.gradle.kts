@@ -15,6 +15,5 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Entanglement"
-include(":shared", ":desktopApp")
-// ":androidApp" follows in the next milestone.
+include(":shared", ":desktopApp", ":androidApp")
 // The server is written in Go (see server/) and not part of the Gradle build.
