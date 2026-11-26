@@ -46,7 +46,7 @@ The server image is built by GitHub Actions and published to
 (compiling needs more RAM than a small VPS has). Only `docker-compose.yml` and `.env` are needed there:
 
 ```sh
-git clone https://github.com/TimKroeger13/FileSync.git entanglement
+git clone https://github.com/TimKroeger13/Entanglement.git entanglement
 cd entanglement
 cp .env.example .env
 openssl rand -hex 32          # paste the output as ENTANGLEMENT_TOKEN in .env
