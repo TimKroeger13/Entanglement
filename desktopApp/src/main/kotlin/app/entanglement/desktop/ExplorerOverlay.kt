@@ -48,6 +48,9 @@ class ExplorerOverlay(private val home: AppHome) {
             ?.let { Paths.get(it) }
             ?.takeIf { Files.isRegularFile(it.resolve(DLL)) }
 
+        /** True if this build contains the overlay DLL (built by shell/build.cmd). */
+        val isBundled get() = bundled != null
+
         /** Only in the installed app on Windows, and only if the DLL was built into it. */
         val isAvailable get() = WindowsIntegration.isAvailable && bundled != null
 

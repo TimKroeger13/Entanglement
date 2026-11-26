@@ -176,6 +176,7 @@ private fun OverlaySection() {
             Text(
                 if (available) "Needs administrator approval once. Windows shows only 11 such badges; " +
                     "Entanglement takes the place of Google Drive's “syncing” badge."
+                else if (WindowsIntegration.isAvailable && !ExplorerOverlay.isBundled) "Not included in this build yet."
                 else "Available in the installed app.",
                 style = MaterialTheme.typography.bodySmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
