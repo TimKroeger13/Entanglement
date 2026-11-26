@@ -30,6 +30,7 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.window.DialogWindow
 import androidx.compose.ui.window.rememberDialogState
 import app.entanglement.desktop.Config
+import app.entanglement.desktop.ExplorerOverlay
 import app.entanglement.desktop.WindowsIntegration
 import app.entanglement.shared.sync.RemoteApi
 import app.entanglement.shared.sync.RemoteException
@@ -60,7 +61,7 @@ fun SettingsDialog(
     DialogWindow(
         onCloseRequest = onClose,
         title = "Entanglement – Settings",
-        state = rememberDialogState(width = 560.dp, height = 640.dp),
+        state = rememberDialogState(width = 600.dp, height = 760.dp),
         icon = remember { RingsPainter() },
     ) {
         EntanglementTheme {
@@ -119,6 +120,7 @@ fun SettingsDialog(
                             color = MaterialTheme.colorScheme.onSurfaceVariant,
                         )
                     }
+                    OverlaySection()
 
                     Spacer(Modifier.weight(1f))
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
@@ -138,6 +140,65 @@ fun SettingsDialog(
                     }
                 }
             }
+        }
+    }
+}
+
+/** Rings badge in Explorer: needs admin once (UAC) and an Explorer restart to appear. */
+@Composable
+private fun OverlaySection() {
+    val available = ExplorerOverlay.isAvailable
+    var enabled by remember { mutableStateOf(available && ExplorerOverlay.isEnabled()) }
+    var busy by remember { mutableStateOf(false) }
+    var status by remember { mutableStateOf<String?>(null) }
+    var offerRestart by remember { mutableStateOf(false) }
+    val scope = rememberCoroutineScope()
+
+    fun toggle(on: Boolean) {
+        busy = true
+        status = "Waiting for administrator approval…"
+        scope.launch {
+            val ok = withContext(Dispatchers.IO) { if (on) ExplorerOverlay.enable() else ExplorerOverlay.disable() }
+            enabled = withContext(Dispatchers.IO) { ExplorerOverlay.isEnabled() }
+            busy = false
+            offerRestart = ok
+            status = when {
+                !ok -> "Not changed (approval declined or failed)."
+                on -> "Done. Explorer shows the rings after a restart."
+                else -> "Removed. Explorer forgets the rings after a restart."
+            }
+        }
+    }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Column(Modifier.weight(1f)) {
+            Text("Rings on entangled files in Explorer", style = MaterialTheme.typography.bodyMedium)
+            Text(
+                if (available) "Needs administrator approval once. Windows shows only 11 such badges; " +
+                    "Entanglement takes the place of Google Drive's “syncing” badge."
+                else "Available in the installed app.",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+        }
+        Spacer(Modifier.size(12.dp))
+        OutlinedButton(enabled = available && !busy, onClick = { toggle(!enabled) }) {
+            Text(if (enabled) "Turn off…" else "Turn on…")
+        }
+    }
+    status?.let { Text(it, style = MaterialTheme.typography.bodySmall) }
+    if (offerRestart) {
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Text(
+                "Restarting Explorer closes open Explorer windows.",
+                Modifier.weight(1f),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            TextButton(onClick = {
+                offerRestart = false
+                scope.launch(Dispatchers.IO) { ExplorerOverlay.restartExplorer() }
+            }) { Text("Restart Explorer") }
         }
     }
 }

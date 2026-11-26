@@ -67,6 +67,9 @@ fun main(args: Array<String>) {
     }
     entangleArg?.let { requests.trySend(listOf("entangle", it)) }
 
+    val overlay = ExplorerOverlay(home)
+    service.onEntangledPaths = overlay::update
+
     Log.info("Started (home: ${home.dir})")
     service.start()
 

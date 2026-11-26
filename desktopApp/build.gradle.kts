@@ -23,6 +23,7 @@ dependencies {
     implementation(libs.compose.material3)
     implementation(libs.coroutines.swing)
     implementation(libs.ktor.client.okhttp)
+    implementation(libs.jna)
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.test)
@@ -42,6 +43,8 @@ compose.desktop {
             description = "Entangled Markdown files"
             vendor = "Entanglement"
             modules("java.naming", "jdk.unsupported")
+            // Explorer overlay DLL + icon (built by shell/build.cmd), shipped next to the app.
+            appResourcesRootDir.set(project.layout.projectDirectory.dir("resources"))
 
             windows {
                 iconFile.set(project.file("icons/entanglement.ico"))

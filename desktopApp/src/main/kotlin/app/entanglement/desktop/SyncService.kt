@@ -84,6 +84,9 @@ class SyncService(
     /** Called when a merge produced new superpositions: (document name, count). */
     var onSuperposition: (String, Int) -> Unit = { _, _ -> }
 
+    /** Called with all entangled paths of this PC whenever that set changes (Explorer overlay). */
+    var onEntangledPaths: (List<Path>) -> Unit = {}
+
     private var local = home.loadState()
     private var remote: List<DocSummary>? = null
     private var connection = Connection.CONNECTING
@@ -276,7 +279,9 @@ class SyncService(
     }
 
     private fun updateWatcher() {
-        watcher?.watch(local.docs.map { Paths.get(it.path) })
+        val paths = local.docs.map { Paths.get(it.path) }
+        watcher?.watch(paths)
+        onEntangledPaths(paths)
     }
 
     private fun publish() {
