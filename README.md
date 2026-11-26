@@ -51,7 +51,7 @@ cp .env.example .env
 openssl rand -hex 32          # paste the output as ENTANGLEMENT_TOKEN in .env
 docker compose up -d --build
 curl http://127.0.0.1:8423/health   # -> ok
-docker image prune -f && docker builder prune -f   # drop the Go build image (~300 MB)
+docker image rm golang:1.27-alpine && docker builder prune -f   # free the Go build image (~300 MB)
 ```
 
 Data lives in the Docker volume `entanglement-data` as plain files:
@@ -92,7 +92,8 @@ The apps then connect to `https://entanglement.example.com` with the token from 
 ```sh
 git pull
 docker compose up -d --build
-docker image prune -f && docker builder prune -f
+docker image prune -f                                    # old entanglement image
+docker image rm golang:1.27-alpine && docker builder prune -f
 ```
 
 ### Backup
