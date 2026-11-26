@@ -41,24 +41,24 @@ No text is ever thrown away. The server also keeps the last 50 versions of every
 
 Requirements: Docker with Compose, and Nginx in front of it for HTTPS.
 
+The server image is built by GitHub Actions and published to
+`ghcr.io/timkroeger13/entanglement-server`, so nothing is compiled on the server
+(compiling needs more RAM than a small VPS has). Only `docker-compose.yml` and `.env` are needed there:
+
 ```sh
-git clone https://github.com/<you>/<this-repo>.git entanglement
+git clone https://github.com/TimKroeger13/FileSync.git entanglement
 cd entanglement
 cp .env.example .env
 openssl rand -hex 32          # paste the output as ENTANGLEMENT_TOKEN in .env
-docker compose up -d --build
+docker compose pull
+docker compose up -d
 curl http://127.0.0.1:8080/health   # -> ok
 ```
 
-The image is built from source on the server. The build stage needs a few hundred MB temporarily; reclaim it
-afterwards with:
-
-```sh
-docker image prune -f && docker builder prune -f
-```
-
-The running container needs about 150 MB of RAM and the final image about 250 MB of disk.
+The running container needs about 150–200 MB of RAM and the image about 250 MB of disk.
 Data lives in the Docker volume `entanglement-data` (one SQLite file).
+
+If you fork this, change the `image:` line in `docker-compose.yml` to your own GitHub account.
 
 ### Nginx
 
@@ -88,10 +88,13 @@ The apps then connect to `https://entanglement.example.com` with the token from 
 
 ### Update
 
+Every push to `main` that touches the server builds a new image. On the server:
+
 ```sh
-git pull
-docker compose up -d --build
-docker image prune -f && docker builder prune -f
+git pull                 # only needed if docker-compose.yml changed
+docker compose pull
+docker compose up -d
+docker image prune -f    # remove the previous image
 ```
 
 ### Backup
@@ -122,6 +125,7 @@ Kotlin 2.4, JDK 21.
 ```sh
 ./gradlew test                   # all tests
 ./gradlew :server:run            # needs ENTANGLEMENT_TOKEN in the environment
+docker build -t entanglement-server .   # build the image locally (needs ~2 GB RAM)
 ```
 
 | Module | Content |
