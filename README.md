@@ -6,7 +6,7 @@ Entanglement keeps text files in sync between your PCs and your Android phone. E
 copy, so you can keep writing offline (on the train, in a tunnel) and the copies sync as soon as there is a
 connection again. A tiny self-hosted server sits in the middle; plain text needs almost no storage.
 
-> Status: work in progress. The sync core and the server are done; the Windows and Android apps are next.
+> Status: work in progress. Server and Windows app work; the Android app is next.
 
 ## Vocabulary
 
@@ -115,6 +115,26 @@ docker image rm golang:1.27-alpine && docker builder prune -f
 docker compose cp entanglement:/data ./entanglement-backup
 ```
 
+## Windows app
+
+A tray app. It keeps your entangled files where they are and syncs them whenever you save – edit them in any
+editor (VS Code, Obsidian, Notepad…).
+
+```sh
+./gradlew :desktopApp:packageMsi
+# -> desktopApp/build/compose/binaries/main/msi/Entanglement-1.0.0.msi (bundles its own Java runtime)
+```
+
+After installing, open **Settings** and enter the server URL, the token from `.env` and a name for this PC.
+There you can also enable:
+
+- **“Entangle” in the Explorer context menu** for `.md` files (Windows 11: under “Show more options”)
+- **Start with Windows** (runs in the tray)
+
+Every entangled file shows where it lives on each observer. A file entangled on another device appears as
+*unobserved* – **Place here…** puts a copy on this PC (an existing file at that spot is merged, never overwritten).
+Settings and state live in `%APPDATA%\Entanglement`.
+
 ## API
 
 All routes except `/health` require `Authorization: Bearer <ENTANGLEMENT_TOKEN>`.
@@ -136,7 +156,8 @@ Server: Go 1.24+, standard library only. Apps: Kotlin 2.4, JDK 21.
 
 ```sh
 cd server && go test ./...       # server tests
-./gradlew test                   # merge + sync engine tests
+./gradlew test                   # merge, sync engine and desktop tests
+./gradlew :desktopApp:run        # start the Windows app from source
 
 # Contract test: the Kotlin client against a running Go server
 cd server && ENTANGLEMENT_TOKEN=local-test-token-123456789 PORT=18081 go run .
@@ -147,5 +168,5 @@ ENTANGLEMENT_TEST_URL=http://127.0.0.1:18081 ENTANGLEMENT_TEST_TOKEN=local-test-
 |---|---|
 | `server` | Go server, files instead of a database |
 | `shared` | Kotlin: models, three-way merge, sync engine, HTTP client – used by both apps |
-| `desktopApp` | Windows tray app *(coming)* |
+| `desktopApp` | Windows tray app (Compose Desktop) |
 | `androidApp` | Android app with editor *(coming)* |

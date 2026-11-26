@@ -44,6 +44,42 @@ class ThreeWayMergeTest {
     }
 
     @Test
+    fun `edits on neighbouring lines are combined`() {
+        // Seen in the end-to-end run: laptop edits one scene, desktop the next one.
+        val b = "# Storyboard\nScene 1: The train leaves.\nScene 2: Snow on the window.\n"
+        val local = "# Storyboard\nScene 1: The night train leaves.\nScene 2: Snow on the window.\n"
+        val remote = "# Storyboard\nScene 1: The train leaves.\nScene 2: Heavy snow on the window.\n"
+        val r = merge(b, local, remote)
+        assertEquals(0, r.superpositions)
+        assertEquals("# Storyboard\nScene 1: The night train leaves.\nScene 2: Heavy snow on the window.\n", r.text)
+    }
+
+    @Test
+    fun `edit next to a deleted line is combined`() {
+        val local = base.replace("Scene 2: Rain on the window.", "Scene 2: Rain, then fog.")
+        val remote = base.replace("Scene 3: A stranger sits down.\n", "")
+        val r = merge(base, local, remote)
+        assertEquals(0, r.superpositions)
+        assertEquals(local.replace("Scene 3: A stranger sits down.\n", ""), r.text)
+    }
+
+    @Test
+    fun `alternating edits across a block are combined`() {
+        val b = "1\n2\n3\n4\n5\n6\n"
+        val r = merge(b, "1a\n2\n3a\n4\n5a\n6\n", "1\n2b\n3\n4b\n5\n6b\n")
+        assertEquals(0, r.superpositions)
+        assertEquals("1a\n2b\n3a\n4b\n5a\n6b\n", r.text)
+    }
+
+    @Test
+    fun `insertion right at an edited line stays a superposition`() {
+        val b = "1\n2\n3\n"
+        val r = merge(b, "1\n2 edited\n3\n", "1\nnew line\n2\n3\n")
+        assertEquals(1, r.superpositions)
+        assertTrue(r.text.contains("2 edited") && r.text.contains("new line"))
+    }
+
+    @Test
     fun `insertions at different places are combined`() {
         val local = base.replace("Scene 2:", "Scene 1b: A whistle.\nScene 2:")
         val remote = base + "Scene 5: Arrival.\n"

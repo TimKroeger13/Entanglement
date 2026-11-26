@@ -4,6 +4,7 @@ plugins {
     alias(libs.plugins.kotlin.jvm)
     alias(libs.plugins.kotlin.serialization)
     `java-library`
+    `java-test-fixtures`
 }
 
 // Plain JVM module: used by the server, the desktop app and the Android app.

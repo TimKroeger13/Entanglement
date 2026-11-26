@@ -56,13 +56,61 @@ object ThreeWayMerge {
                 aChunk == oChunk -> bChunk.forEach(out::append)
                 bChunk == oChunk -> aChunk.forEach(out::append)
                 else -> {
-                    appendSuperposition(out, aChunk, bChunk, localLabel, remoteLabel)
-                    superpositions++
+                    val combined = combineDisjointEdits(oChunk, aChunk, bChunk)
+                    if (combined != null) {
+                        combined.forEach(out::append)
+                    } else {
+                        appendSuperposition(out, aChunk, bChunk, localLabel, remoteLabel)
+                        superpositions++
+                    }
                 }
             }
             io = next; ia = aEnd; ib = bEnd
         }
         return Result(out.toString(), superpositions)
+    }
+
+    /** One edit relative to the base: base lines [start, end) are replaced by [lines]. */
+    private class Hunk(val start: Int, val end: Int, val lines: List<String>) {
+        val isInsertion get() = start == end
+    }
+
+    private fun hunks(base: List<String>, side: List<String>): List<Hunk> {
+        val result = ArrayList<Hunk>()
+        var i = 0
+        var j = 0
+        for (m in LineDiff.matches(base, side) + LineDiff.Match(base.size, side.size)) {
+            if (m.a > i || m.b > j) result += Hunk(i, m.a, side.subList(j, m.b))
+            i = m.a + 1
+            j = m.b + 1
+        }
+        return result
+    }
+
+    private fun overlap(x: Hunk, y: Hunk): Boolean = when {
+        x.isInsertion && y.isInsertion -> x.start == y.start
+        x.isInsertion -> x.start in y.start..y.end
+        y.isInsertion -> y.start in x.start..x.end
+        else -> x.start < y.end && y.start < x.end
+    }
+
+    /**
+     * Both sides changed the same region, but maybe on different lines (e.g. neighbouring lines).
+     * If no edit of one side touches an edit of the other, all edits are applied; otherwise null.
+     */
+    private fun combineDisjointEdits(base: List<String>, local: List<String>, remote: List<String>): List<String>? {
+        val a = hunks(base, local)
+        val b = hunks(base, remote)
+        if (a.any { x -> b.any { y -> overlap(x, y) } }) return null
+        val out = ArrayList<String>()
+        var pos = 0
+        for (h in (a + b).sortedBy { it.start }) {
+            out += base.subList(pos, h.start)
+            out += h.lines
+            pos = h.end
+        }
+        out += base.subList(pos, base.size)
+        return out
     }
 
     /** Writes both versions; lines common to both at the start or end stay outside the markers. */
