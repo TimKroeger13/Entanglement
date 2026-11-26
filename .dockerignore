@@ -1,0 +1,11 @@
+**/build/
+**/.gradle/
+.kotlin/
+.git/
+.idea/
+desktopApp/
+androidApp/
+local.properties
+keystore.properties
+signing/
+.env

@@ -13,7 +13,10 @@ data class Observer(
 @Serializable
 enum class Platform { DESKTOP, ANDROID }
 
-/** Where an entangled document lives on one observer. `path == null` means the observer has not placed it yet. */
+/**
+ * Where an entangled document lives on one observer. An observer without a placement has not
+ * placed the document yet (it is "unobserved" there). `path == null` means it lives inside the app (phone).
+ */
 @Serializable
 data class Placement(
     val observerId: String,

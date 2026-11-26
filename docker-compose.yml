@@ -1,0 +1,16 @@
+services:
+  entanglement:
+    build: .
+    image: entanglement-server
+    container_name: entanglement
+    restart: unless-stopped
+    environment:
+      ENTANGLEMENT_TOKEN: ${ENTANGLEMENT_TOKEN:?Set ENTANGLEMENT_TOKEN in .env (see .env.example)}
+    volumes:
+      - entanglement-data:/data
+    ports:
+      # Only reachable from the host itself; Nginx proxies to it.
+      - "127.0.0.1:${ENTANGLEMENT_PORT:-8080}:8080"
+
+volumes:
+  entanglement-data:
