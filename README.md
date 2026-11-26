@@ -41,24 +41,25 @@ No text is ever thrown away. The server also keeps the last 50 versions of every
 
 Requirements: Docker with Compose, and Nginx in front of it for HTTPS.
 
-The server image is built by GitHub Actions and published to
-`ghcr.io/timkroeger13/entanglement-server`, so nothing is compiled on the server
-(compiling needs more RAM than a small VPS has). Only `docker-compose.yml` and `.env` are needed there:
+The server is a single Go program using only the standard library. It builds on the server itself in about
+a minute and fits comfortably on a small VPS: the image is about 8 MB and the container uses roughly 10–20 MB of RAM.
 
 ```sh
 git clone https://github.com/TimKroeger13/Entanglement.git entanglement
 cd entanglement
 cp .env.example .env
 openssl rand -hex 32          # paste the output as ENTANGLEMENT_TOKEN in .env
-docker compose pull
-docker compose up -d
+docker compose up -d --build
 curl http://127.0.0.1:8080/health   # -> ok
+docker image prune -f && docker builder prune -f   # drop the Go build image (~300 MB)
 ```
 
-The running container needs about 150–200 MB of RAM and the image about 250 MB of disk.
-Data lives in the Docker volume `entanglement-data` (one SQLite file).
+Data lives in the Docker volume `entanglement-data` as plain files:
 
-If you fork this, change the `image:` line in `docker-compose.yml` to your own GitHub account.
+```
+state.json               devices, document names, versions, paths per device
+docs/<id>/<version>.md   every kept version as a normal Markdown file
+```
 
 ### Nginx
 
@@ -73,7 +74,7 @@ server {
     ssl_certificate     /etc/letsencrypt/live/entanglement.example.com/fullchain.pem;
     ssl_certificate_key /etc/letsencrypt/live/entanglement.example.com/privkey.pem;
 
-    client_max_body_size 10m;
+    client_max_body_size 16m;
 
     location / {
         proxy_pass http://127.0.0.1:8080;
@@ -88,13 +89,10 @@ The apps then connect to `https://entanglement.example.com` with the token from 
 
 ### Update
 
-Every push to `main` that touches the server builds a new image. On the server:
-
 ```sh
-git pull                 # only needed if docker-compose.yml changed
-docker compose pull
-docker compose up -d
-docker image prune -f    # remove the previous image
+git pull
+docker compose up -d --build
+docker image prune -f && docker builder prune -f
 ```
 
 ### Backup
@@ -120,17 +118,20 @@ All routes except `/health` require `Authorization: Bearer <ENTANGLEMENT_TOKEN>`
 
 ## Development
 
-Kotlin 2.4, JDK 21.
+Server: Go 1.24+, standard library only. Apps: Kotlin 2.4, JDK 21.
 
 ```sh
-./gradlew test                   # all tests
-./gradlew :server:run            # needs ENTANGLEMENT_TOKEN in the environment
-docker build -t entanglement-server .   # build the image locally (needs ~2 GB RAM)
+cd server && go test ./...       # server tests
+./gradlew test                   # merge + sync engine tests
+
+# Contract test: the Kotlin client against a running Go server
+cd server && ENTANGLEMENT_TOKEN=local-test-token-123456789 PORT=18081 go run .
+ENTANGLEMENT_TEST_URL=http://127.0.0.1:18081 ENTANGLEMENT_TEST_TOKEN=local-test-token-123456789 ./gradlew :shared:test
 ```
 
 | Module | Content |
 |---|---|
-| `shared` | Models, three-way merge, sync engine, HTTP client – used by all others |
-| `server` | Ktor + SQLite |
+| `server` | Go server, files instead of a database |
+| `shared` | Kotlin: models, three-way merge, sync engine, HTTP client – used by both apps |
 | `desktopApp` | Windows tray app *(coming)* |
 | `androidApp` | Android app with editor *(coming)* |

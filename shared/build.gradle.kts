@@ -26,6 +26,12 @@ dependencies {
 
     testImplementation(libs.kotlin.test)
     testImplementation(libs.coroutines.test)
+    testImplementation(libs.ktor.client.okhttp)
 }
 
-tasks.test { useJUnitPlatform() }
+tasks.test {
+    useJUnitPlatform()
+    // Contract test against a running Go server, e.g. ENTANGLEMENT_TEST_URL=http://127.0.0.1:18080
+    environment("ENTANGLEMENT_TEST_URL", System.getenv("ENTANGLEMENT_TEST_URL").orEmpty())
+    environment("ENTANGLEMENT_TEST_TOKEN", System.getenv("ENTANGLEMENT_TEST_TOKEN").orEmpty())
+}

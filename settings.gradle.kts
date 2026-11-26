@@ -15,9 +15,6 @@ dependencyResolutionManagement {
 }
 
 rootProject.name = "Entanglement"
-include(":shared", ":server")
-
-// The Docker build passes -PserverOnly so it needs neither the Android SDK nor Compose.
-if (!providers.gradleProperty("serverOnly").isPresent) {
-    // include(":desktopApp", ":androidApp") – added in the next milestones
-}
+include(":shared")
+// ":desktopApp" and ":androidApp" follow in the next milestones.
+// The server is written in Go (see server/) and not part of the Gradle build.
