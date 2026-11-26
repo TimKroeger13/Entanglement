@@ -87,6 +87,19 @@ server {
 
 The apps then connect to `https://entanglement.example.com` with the token from `.env`.
 
+Or, without a subdomain, under a path of an existing site (inside its `server { listen 443 ... }` block):
+
+```nginx
+location ^~ /entanglement/ {
+    proxy_pass http://127.0.0.1:8423/;   # trailing slash strips the /entanglement prefix
+    proxy_set_header Host $host;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+}
+```
+
+The server URL in the apps is then `https://example.com/entanglement`.
+
 ### Update
 
 ```sh
