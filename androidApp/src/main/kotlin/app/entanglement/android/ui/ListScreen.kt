@@ -144,12 +144,11 @@ private fun DocRow(doc: DocItem, onClick: () -> Unit) {
                 maxLines = 1,
                 overflow = TextOverflow.Ellipsis,
             )
-            val sub = buildList {
-                if (doc.updatedByName != null && doc.updatedAt != null && doc.updatedAt > 0) {
-                    add("${doc.updatedByName} · ${time(doc.updatedAt)}")
-                }
-                doc.elsewhere.map { it.first }.takeIf { it.isNotEmpty() }?.let { add("also on " + it.joinToString(", ")) }
-            }.joinToString("  ·  ")
+            val sub = if (doc.updatedByName != null && doc.updatedAt != null && doc.updatedAt > 0) {
+                "Last change: ${doc.updatedByName}, ${time(doc.updatedAt)}"
+            } else {
+                ""
+            }
             if (sub.isNotEmpty()) {
                 Text(
                     sub,

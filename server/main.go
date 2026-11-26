@@ -5,6 +5,7 @@
 //	ENTANGLEMENT_TOKEN  required, at least 24 characters: shared secret of all observers
 //	ENTANGLEMENT_DATA   data directory (default ./data)
 //	PORT                listen port (default 8080)
+//	HOST                listen address (default: all interfaces; 127.0.0.1 for local tests)
 //
 // `entanglement-server -healthcheck` probes the running server (used by Docker).
 package main
@@ -50,7 +51,7 @@ func main() {
 	}
 
 	srv := &http.Server{
-		Addr:              ":" + port,
+		Addr:              os.Getenv("HOST") + ":" + port,
 		Handler:           NewHandler(store, token),
 		ReadHeaderTimeout: 10 * time.Second,
 		ReadTimeout:       2 * time.Minute,

@@ -6,7 +6,12 @@ import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
+import androidx.compose.foundation.layout.ExperimentalLayoutApi
+import androidx.compose.foundation.layout.WindowInsets
+import androidx.compose.foundation.layout.consumeWindowInsets
 import androidx.compose.foundation.layout.imePadding
+import androidx.compose.foundation.layout.isImeVisible
+import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
@@ -34,16 +39,20 @@ import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.text.TextRange
+import androidx.compose.ui.text.input.KeyboardCapitalization
+import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
+import app.entanglement.android.data.Connection
+import app.entanglement.android.data.DocStatus
 import app.entanglement.android.data.Repository
 import app.entanglement.android.data.UserError
 import app.entanglement.shared.merge.Superposition
 import kotlinx.coroutines.launch
 
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
 @Composable
 fun EditorScreen(repository: Repository, id: String, onBack: () -> Unit) {
     val ui by repository.ui.collectAsStateWithLifecycle()
@@ -64,7 +73,7 @@ fun EditorScreen(repository: Repository, id: String, onBack: () -> Unit) {
         known = result
         if (result != typed) {
             editor.edit {
-                val cursor = selection.start.coerceAtMost(result.length)
+                val cursor = keepCursor(typed, result, selection.start)
                 replace(0, length, result)
                 selection = TextRange(cursor)
             }
@@ -82,7 +91,15 @@ fun EditorScreen(repository: Repository, id: String, onBack: () -> Unit) {
                 title = {
                     Column {
                         Text(doc?.name ?: "", maxLines = 1, overflow = TextOverflow.Ellipsis)
-                        ConnectionLine(ui.connection, ui.lastSync)
+                        if (doc?.status == DocStatus.CHANGES_WAITING && ui.connection == Connection.ONLINE) {
+                            Text(
+                                "Saved · syncing…",
+                                style = MaterialTheme.typography.labelMedium,
+                                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            )
+                        } else {
+                            ConnectionLine(ui.connection, ui.lastSync)
+                        }
                     }
                 },
                 actions = {
@@ -99,11 +116,22 @@ fun EditorScreen(repository: Repository, id: String, onBack: () -> Unit) {
             )
         },
     ) { padding ->
-        Column(Modifier.padding(padding).fillMaxSize().imePadding()) {
+        // consumeWindowInsets: the navigation bar is already in `padding`, so imePadding must not add it again.
+        Column(Modifier.padding(padding).consumeWindowInsets(padding).imePadding().fillMaxSize()) {
             val blocks = remember(repoText) { Superposition.find(repoText) }
             blocks.firstOrNull()?.let { block ->
-                MeasureBanner(block, blocks.size) { keep ->
-                    repository.edit(id, Superposition.resolve(repository.text(id).value, block, keep))
+                if (WindowInsets.isImeVisible) {
+                    // While typing, keep the writing space: a slim hint only; the full choice shows when the keyboard closes.
+                    Text(
+                        "Superposition in this file – close the keyboard to measure",
+                        Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 6.dp),
+                        style = MaterialTheme.typography.labelMedium,
+                        color = Amber,
+                    )
+                } else {
+                    MeasureBanner(block, blocks.size) { keep ->
+                        repository.edit(id, Superposition.resolve(repository.text(id).value, block, keep))
+                    }
                 }
             }
             error?.let {
@@ -118,6 +146,11 @@ fun EditorScreen(repository: Repository, id: String, onBack: () -> Unit) {
                     lineHeight = 26.sp,
                 ),
                 cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
+                keyboardOptions = KeyboardOptions(
+                    capitalization = KeyboardCapitalization.Sentences,
+                    autoCorrectEnabled = true,
+                    keyboardType = KeyboardType.Text,
+                ),
             )
         }
     }
@@ -181,4 +214,21 @@ private fun Version(observer: String, text: String) {
             overflow = TextOverflow.Ellipsis,
         )
     }
+}
+
+/**
+ * Where the cursor belongs after the text changed from [old] to [new] underneath it (a sync landed):
+ * changes before the cursor shift it, changes after it don't, so you keep typing at your own spot.
+ */
+internal fun keepCursor(old: String, new: String, cursor: Int): Int {
+    var prefix = 0
+    val max = minOf(old.length, new.length)
+    while (prefix < max && old[prefix] == new[prefix]) prefix++
+    var suffix = 0
+    while (suffix < max - prefix && old[old.length - 1 - suffix] == new[new.length - 1 - suffix]) suffix++
+    return when {
+        cursor <= prefix -> cursor
+        cursor >= old.length - suffix -> cursor + (new.length - old.length)
+        else -> new.length - suffix
+    }.coerceIn(0, new.length)
 }

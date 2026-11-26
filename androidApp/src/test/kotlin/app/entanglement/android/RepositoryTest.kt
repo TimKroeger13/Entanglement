@@ -172,3 +172,20 @@ class RepositoryTest {
         assertEquals(DocStatus.ENTANGLED, restarted.ui.value.docs.single().status)
     }
 }
+
+class KeepCursorTest {
+    @Test
+    fun `text inserted above moves the cursor along`() {
+        val old = "Scene 1\nScene 2|"
+        val new = "Scene 0\nScene 1\nScene 2|"
+        val cursor = old.indexOf('|')
+        assertEquals(new.indexOf('|'), app.entanglement.android.ui.keepCursor(old, new, cursor))
+    }
+
+    @Test
+    fun `text changed below leaves the cursor where it is`() {
+        val old = "Scene 1|\nScene 2\n"
+        val new = "Scene 1|\nScene 2 from the laptop\n"
+        assertEquals(old.indexOf('|'), app.entanglement.android.ui.keepCursor(old, new, old.indexOf('|')))
+    }
+}
