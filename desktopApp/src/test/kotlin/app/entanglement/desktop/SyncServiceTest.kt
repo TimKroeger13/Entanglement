@@ -191,11 +191,84 @@ class SyncServiceTest {
         val pc2 = pc("PC2")
         val (a, b) = entangledOnBoth(pc1, pc2)
         pc1.decohere(pc1.doc().id)
-        assertTrue(pc1.ui.value.docs.isEmpty())
+        assertEquals(DocStatus.DESYNCED, pc1.doc().status)
 
         pc2.syncNow()
-        assertTrue(pc2.ui.value.docs.isEmpty())
+        assertEquals(DocStatus.DESYNCED, pc2.doc().status)
         assertTrue(Files.exists(a) && Files.exists(b))
+        b.writeText("Only on PC2 now\n")
+        pc2.syncNow()
+        assertEquals("Scene 1\nScene 2\nScene 3\n", a.readText(), "desynced copies no longer follow each other")
+    }
+
+    @Test
+    fun `rename here renames the file and the document, other PCs follow`() = runTest {
+        val pc1 = pc("PC1")
+        val pc2 = pc("PC2")
+        val (a, b) = entangledOnBoth(pc1, pc2)
+        pc1.rename(pc1.doc().id, "Act One")
+        val renamed = a.resolveSibling("Act One.md")
+        assertTrue(Files.exists(renamed) && !Files.exists(a))
+        assertEquals("Act One.md", server.docs.values.single().name)
+
+        pc2.syncNow()
+        val followed = b.resolveSibling("Act One.md")
+        assertTrue(Files.exists(followed) && !Files.exists(b), "PC2 renames its file too")
+        assertEquals(DocStatus.ENTANGLED, pc2.doc("Act One.md").status)
+    }
+
+    @Test
+    fun `renaming in Explorer is followed instead of being lost`() = runTest {
+        val pc1 = pc("PC1")
+        val a = file("pc1/Storyboard.md", "Scene 1\n")
+        pc1.entangle(a)
+        pc1.syncNow()
+        val renamed = a.resolveSibling("Storyboard v2.md")
+        Files.move(a, renamed)
+        pc1.syncNow()
+        val doc = pc1.doc("Storyboard v2.md")
+        assertEquals(DocStatus.ENTANGLED, doc.status)
+        assertEquals(renamed.toString(), doc.localPath)
+        assertEquals("Storyboard v2.md", server.docs.values.single().name)
+    }
+
+    @Test
+    fun `move puts the file somewhere else and keeps syncing`() = runTest {
+        val pc1 = pc("PC1")
+        val a = file("pc1/Storyboard.md", "Scene 1\n")
+        pc1.entangle(a)
+        pc1.syncNow()
+        val target = root.resolve("pc1/archive/2026/Storyboard.md")
+        pc1.move(pc1.doc().id, target)
+        assertTrue(Files.exists(target) && !Files.exists(a))
+        target.writeText("Scene 1 moved\n")
+        pc1.syncNow()
+        assertEquals("Scene 1 moved\n", server.docs.values.single().content)
+        assertEquals(target.toString(), server.placements.values.single()["id-PC1"])
+    }
+
+    @Test
+    fun `desync keeps every copy and re-sync merges what changed meanwhile`() = runTest {
+        val pc1 = pc("PC1")
+        val pc2 = pc("PC2")
+        val (a, b) = entangledOnBoth(pc1, pc2)
+        pc1.decohere(pc1.doc().id)
+        pc2.syncNow()
+        assertEquals(DocStatus.DESYNCED, pc1.doc().status)
+        assertEquals(DocStatus.DESYNCED, pc2.doc().status)
+
+        // While desynced, both edit different lines.
+        a.writeText("Scene 1 by PC1\nScene 2\nScene 3\n")
+        b.writeText("Scene 1\nScene 2\nScene 3 by PC2\n")
+
+        pc1.resync(pc1.doc().id)
+        pc1.syncNow()
+        pc2.syncNow()
+        pc1.syncNow()
+        val merged = "Scene 1 by PC1\nScene 2\nScene 3 by PC2\n"
+        assertEquals(merged, a.readText())
+        assertEquals(merged, b.readText())
+        assertEquals(DocStatus.ENTANGLED, pc2.doc().status)
     }
 
     @Test

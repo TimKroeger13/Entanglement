@@ -82,15 +82,23 @@ class SyncEngine(
     ): SyncResult {
         var remote = initialRemote
         repeat(MAX_MERGE_ATTEMPTS) {
-            val merged = ThreeWayMerge.merge(
-                base = base.content,
-                local = local,
-                remote = remote.content,
-                localLabel = observer.name,
-                remoteLabel = remote.updatedByName,
-            )
-            replica.write(merged.text)
-            val outcome = Outcome.Merged(merged.superpositions)
+            // The newest server version was written by this very observer (e.g. the answer to a push got lost
+            // on the way back): the local text grew out of it, so it simply replaces it. Merging would compare
+            // this observer with itself and could even produce a superposition "Phone vs Phone".
+            val fastForward = remote.updatedBy.isNotEmpty() && remote.updatedBy == observer.id
+            val merged = if (fastForward) {
+                ThreeWayMerge.Result(local, 0)
+            } else {
+                ThreeWayMerge.merge(
+                    base = base.content,
+                    local = local,
+                    remote = remote.content,
+                    localLabel = observer.name,
+                    remoteLabel = remote.updatedByName,
+                )
+            }
+            if (!fastForward) replica.write(merged.text)
+            val outcome = if (fastForward) Outcome.Pushed else Outcome.Merged(merged.superpositions)
 
             if (merged.text == remote.content) return SyncResult(outcome, Base(remote.version, remote.content))
 

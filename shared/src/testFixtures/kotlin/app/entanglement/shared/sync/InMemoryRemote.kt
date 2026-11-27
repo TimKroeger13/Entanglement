@@ -39,6 +39,7 @@ class InMemoryRemote(observerNames: Map<String, String> = emptyMap()) : RemoteAp
                 updatedAt = doc.updatedAt,
                 updatedByName = doc.updatedByName,
                 decohered = doc.id in decohered,
+                updatedBy = doc.updatedBy,
                 placements = placements[doc.id].orEmpty().map { (obs, path) ->
                     val (name, platform) = observers[obs] ?: (obs to Platform.DESKTOP)
                     Placement(obs, name, platform, path)
@@ -55,7 +56,7 @@ class InMemoryRemote(observerNames: Map<String, String> = emptyMap()) : RemoteAp
     override suspend fun create(request: CreateDocRequest): DocContent {
         net()
         docs[request.id]?.let { return it }
-        val doc = DocContent(request.id, request.name, 1, request.content, 0, name(request.observerId))
+        val doc = DocContent(request.id, request.name, 1, request.content, 0, name(request.observerId), request.observerId)
         docs[request.id] = doc
         placements.getOrPut(request.id) { mutableMapOf() }[request.observerId] = request.path
         return doc
@@ -73,6 +74,7 @@ class InMemoryRemote(observerNames: Map<String, String> = emptyMap()) : RemoteAp
             version = current.version + 1,
             content = request.content,
             updatedByName = name(request.observerId),
+            updatedBy = request.observerId,
         )
         docs[docId] = next
         return PushResult.Accepted(next)
@@ -85,6 +87,7 @@ class InMemoryRemote(observerNames: Map<String, String> = emptyMap()) : RemoteAp
             version = current.version + 1,
             content = content,
             updatedByName = name(observerId),
+            updatedBy = observerId,
         )
     }
 
@@ -98,6 +101,18 @@ class InMemoryRemote(observerNames: Map<String, String> = emptyMap()) : RemoteAp
         net()
         get(docId)
         decohered += docId
+    }
+
+    override suspend fun rename(docId: String, name: String) {
+        net()
+        if (docId in decohered) throw RemoteException(HttpStatusCode.Gone, "decohered")
+        docs[docId] = get(docId).copy(name = name)
+    }
+
+    override suspend fun resync(docId: String) {
+        net()
+        get(docId)
+        decohered -= docId
     }
 
     private fun net() {

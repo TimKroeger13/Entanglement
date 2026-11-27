@@ -100,6 +100,28 @@ class SyncEngineTest {
     }
 
     @Test
+    fun `a lost answer to our own push never becomes a superposition with ourselves`() = runTest {
+        val (base, replica) = entangled()
+        replica.text = "Scene 1\nScene 2 typed\nScene 3\n"
+        // The server stores the push, but the answer never arrives (sync cancelled, tunnel, ...).
+        val answerLost = object : RemoteApi by remote {
+            override suspend fun push(docId: String, request: app.entanglement.shared.model.PushRequest): PushResult {
+                remote.push(docId, request)
+                throw java.io.IOException("connection reset")
+            }
+        }
+        runCatching { SyncEngine(answerLost, laptop).sync("doc", 1, base, replica) }
+        assertEquals(2, remote.docs.getValue("doc").version)
+
+        // Still on the old base, the user keeps typing on the same line.
+        replica.text = "Scene 1\nScene 2 typed and typed on\nScene 3\n"
+        val r = engine.sync("doc", 2, base, replica)
+        assertEquals(Outcome.Pushed, r.outcome)
+        assertEquals("Scene 1\nScene 2 typed and typed on\nScene 3\n", remote.docs.getValue("doc").content)
+        assertEquals(replica.text, remote.docs.getValue("doc").content)
+    }
+
+    @Test
     fun `failed push after merge is repeated safely on the next run`() = runTest {
         val (base, replica) = entangled()
         replica.text = "Scene 1 laptop\nScene 2\nScene 3\n"

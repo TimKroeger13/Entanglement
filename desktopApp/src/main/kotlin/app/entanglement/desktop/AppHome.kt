@@ -27,10 +27,16 @@ data class LocalDoc(
     val name: String,
     val path: String,
     val base: Base,
+    /** Renamed on this PC while the server could not be told yet. */
+    val renamePending: Boolean = false,
 )
 
 @Serializable
-data class LocalState(val docs: List<LocalDoc> = emptyList())
+data class LocalState(
+    val docs: List<LocalDoc> = emptyList(),
+    /** Desynced documents, kept with their last common base so a re-sync can merge properly. */
+    val desynced: List<LocalDoc> = emptyList(),
+)
 
 /**
  * The app's own folder: `%APPDATA%\Entanglement` (override with ENTANGLEMENT_HOME, e.g. to run a

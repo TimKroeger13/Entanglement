@@ -33,7 +33,7 @@ import java.util.UUID
 
 enum class Connection { NOT_CONFIGURED, CONNECTING, ONLINE, OFFLINE, UNAUTHORIZED }
 
-enum class DocStatus { ENTANGLED, CHANGES_WAITING, SUPERPOSITION, LOST, UNOBSERVED, ERROR }
+enum class DocStatus { ENTANGLED, CHANGES_WAITING, SUPERPOSITION, LOST, UNOBSERVED, ERROR, DESYNCED }
 
 data class ObserverView(val name: String, val platform: Platform, val path: String?, val isThis: Boolean)
 
@@ -140,14 +140,23 @@ class SyncService(
         connection = Connection.ONLINE
         connectionMessage = null
 
+        // Re-synced (here or on another observer): take back documents this PC had before the desync.
+        for (kept in local.desynced.toList()) {
+            val summary = list.find { it.id == kept.id } ?: continue
+            if (summary.decohered || local.docs.any { it.id == kept.id || it.path == kept.path }) continue
+            if (!Files.isRegularFile(Paths.get(kept.path))) continue
+            Log.info("${kept.name} was re-synced; joining again")
+            saveLocal(local.copy(docs = local.docs + kept, desynced = local.desynced - kept))
+        }
+
         val engine = SyncEngine(api, observer(cfg))
         for (doc in local.docs.toList()) {
             val summary = list.find { it.id == doc.id }
             when {
                 summary == null -> messages[doc.id] = "Not found on the server"
                 summary.decohered -> {
-                    Log.info("${doc.name} was decohered elsewhere; keeping the local file")
-                    removeLocal(doc.id)
+                    Log.info("${doc.name} was desynced elsewhere; keeping the local file")
+                    desyncLocal(doc.id)
                 }
                 else -> syncOne(api, engine, cfg, doc, summary)
             }
@@ -156,8 +165,30 @@ class SyncService(
         publish()
     }
 
-    private suspend fun syncOne(api: RemoteApi, engine: SyncEngine, cfg: Config, doc: LocalDoc, summary: DocSummary) {
+    private suspend fun syncOne(api: RemoteApi, engine: SyncEngine, cfg: Config, initial: LocalDoc, summary: DocSummary) {
+        var doc = initial
         try {
+            // Renamed or moved within its folder (Explorer, VS Code ...): follow it instead of reporting it lost.
+            if (!Files.isRegularFile(Paths.get(doc.path))) {
+                findMoved(doc)?.let { moved ->
+                    val renamed = moved.fileName.toString() != Paths.get(doc.path).fileName.toString()
+                    Log.info("${doc.name} was renamed/moved to $moved; following it")
+                    doc = doc.copy(
+                        path = moved.toString(),
+                        name = if (renamed) moved.fileName.toString() else doc.name,
+                        renamePending = doc.renamePending || renamed,
+                    )
+                    updateLocal(doc)
+                }
+            }
+            if (doc.renamePending) {
+                api.rename(doc.id, doc.name)
+                doc = doc.copy(renamePending = false)
+                updateLocal(doc)
+            } else if (summary.name != doc.name) {
+                doc = followRename(doc, summary.name)
+                updateLocal(doc)
+            }
             if (summary.placements.find { it.observerId == cfg.observerId }?.path != doc.path) {
                 api.setPlacement(doc.id, PlacementRequest(cfg.observerId, doc.path))
             }
@@ -225,13 +256,111 @@ class SyncService(
         requestSync()
     }
 
-    /** Stops syncing the document everywhere. Local files stay. */
+    /** Desync: stops syncing the document on all observers. Every copy stays; [resync] undoes it. */
     suspend fun decohere(docId: String) = mutex.withLock {
         val cfg = requireOnline()
         api(cfg).decohere(docId)
-        removeLocal(docId)
+        desyncLocal(docId)
         remote = remote?.map { if (it.id == docId) it.copy(decohered = true) else it }
         publish()
+    }
+
+    /** Re-sync a desynced document. Copies that changed in the meantime are merged, nothing is overwritten. */
+    suspend fun resync(docId: String) = mutex.withLock {
+        val cfg = requireOnline()
+        api(cfg).resync(docId)
+        val summary = remote?.find { it.id == docId }
+        val kept = local.desynced.find { it.id == docId }
+        val knownPath = kept?.path ?: summary?.placements?.find { it.observerId == cfg.observerId }?.path
+        if (knownPath != null && Files.isRegularFile(Paths.get(knownPath)) && local.docs.none { it.path == knownPath }) {
+            // With the old common base a real three-way merge happens; without it, both versions are kept.
+            val doc = kept?.copy(path = knownPath) ?: LocalDoc(docId, summary?.name ?: "", knownPath, Base(0, ""))
+            saveLocal(local.copy(docs = local.docs + doc, desynced = local.desynced.filterNot { it.id == docId }))
+        }
+        remote = remote?.map { if (it.id == docId) it.copy(decohered = false) else it }
+        publish()
+        requestSync()
+    }
+
+    /** Renames the file on this PC and the document everywhere. Works offline; the new name follows later. */
+    suspend fun rename(docId: String, newName: String) = mutex.withLock {
+        val doc = local.docs.find { it.id == docId } ?: throw UserError("Unknown document")
+        val from = Paths.get(doc.path)
+        val name = cleanFileName(newName, from)
+        val to = from.resolveSibling(name)
+        if (to != from) {
+            if (Files.exists(to)) throw UserError("$name already exists in this folder")
+            if (Files.isRegularFile(from)) Files.move(from, to)
+        }
+        var updated = doc.copy(name = name, path = to.toString(), renamePending = true)
+        updateLocal(updated)
+        runCatching { api(requireOnline()).rename(docId, name) }.onSuccess {
+            updated = updated.copy(renamePending = false)
+            updateLocal(updated)
+        }
+        publish()
+        requestSync()
+    }
+
+    /** Moves the file on this PC to [target] (another folder and/or name). */
+    suspend fun move(docId: String, target: Path) = mutex.withLock {
+        val doc = local.docs.find { it.id == docId } ?: throw UserError("Unknown document")
+        val from = Paths.get(doc.path)
+        val to = target.toAbsolutePath().normalize()
+        if (to == from) return@withLock
+        if (Files.exists(to)) throw UserError("A file already exists at $to")
+        Files.createDirectories(to.parent)
+        Files.move(from, to)
+        val renamed = to.fileName.toString() != from.fileName.toString()
+        updateLocal(
+            doc.copy(
+                path = to.toString(),
+                name = if (renamed) to.fileName.toString() else doc.name,
+                renamePending = doc.renamePending || renamed,
+            ),
+        )
+        publish()
+        requestSync()
+    }
+
+    /** A lost file's folder may hold it under a new name: same content as the last synced version. */
+    private fun findMoved(doc: LocalDoc): Path? {
+        val old = Paths.get(doc.path)
+        val dir = old.parent ?: return null
+        if (!Files.isDirectory(dir)) return null
+        val entangled = local.docs.map { Paths.get(it.path) }.toSet()
+        val candidates = runCatching {
+            Files.list(dir).use { files ->
+                files.filter { Files.isRegularFile(it) && it !in entangled && Files.size(it) < 16_000_000 }.toList()
+            }
+        }.getOrDefault(emptyList())
+        return candidates.filter { candidate ->
+            runCatching {
+                LineEnding.normalize(FileReplica.decode(Files.readAllBytes(candidate), candidate)) == doc.base.content
+            }.getOrDefault(false)
+        }.singleOrNull()
+    }
+
+    /** Renamed on another observer: rename the file here too, if it still carries the old name. */
+    private fun followRename(doc: LocalDoc, newName: String): LocalDoc {
+        val path = Paths.get(doc.path)
+        if (path.fileName.toString() != doc.name || !Files.isRegularFile(path)) return doc.copy(name = newName)
+        val target = runCatching { path.resolveSibling(newName) }.getOrNull()
+        if (target == null || Files.exists(target)) return doc.copy(name = newName)
+        return runCatching {
+            Files.move(path, target)
+            Log.info("Renamed ${doc.name} to $newName (renamed elsewhere)")
+            doc.copy(name = newName, path = target.toString())
+        }.getOrElse { doc.copy(name = newName) }
+    }
+
+    private fun cleanFileName(input: String, current: Path): String {
+        val name = input.trim()
+        if (name.isEmpty()) throw UserError("Please enter a name.")
+        if (name.any { it in FORBIDDEN }) throw UserError("A file name cannot contain $FORBIDDEN")
+        if (name.contains('.')) return name
+        val ext = current.fileName.toString().substringAfterLast('.', "")
+        return if (ext.isEmpty()) name else "$name.$ext"
     }
 
     private fun requireOnline(): Config {
@@ -272,6 +401,13 @@ class SyncService(
         saveLocal(local.copy(docs = local.docs.filterNot { it.id == id }))
     }
 
+    /** Leaves sync but keeps the entry (path and last common base) for a later re-sync. */
+    private fun desyncLocal(id: String) {
+        messages.remove(id)
+        val doc = local.docs.find { it.id == id } ?: return
+        saveLocal(local.copy(docs = local.docs - doc, desynced = local.desynced.filterNot { it.id == id } + doc))
+    }
+
     private fun saveLocal(state: LocalState) {
         local = state
         home.saveState(state)
@@ -288,6 +424,23 @@ class SyncService(
         val cfg = _config.value
         val remoteDocs = remote.orEmpty()
         val docs = local.docs.map { doc -> localView(doc, remoteDocs.find { it.id == doc.id }, cfg) } +
+            remoteDocs
+                .filter { it.decohered && local.docs.none { d -> d.id == it.id } }
+                .map { summary ->
+                    DocView(
+                        id = summary.id,
+                        name = summary.name,
+                        status = DocStatus.DESYNCED,
+                        localPath = local.desynced.find { it.id == summary.id }?.path,
+                        superpositions = 0,
+                        observers = summary.placements.map {
+                            ObserverView(it.observerName, it.platform, it.path, it.observerId == cfg.observerId)
+                        },
+                        updatedByName = summary.updatedByName,
+                        updatedAt = summary.updatedAt,
+                        message = null,
+                    )
+                } +
             remoteDocs
                 .filter { !it.decohered && local.docs.none { d -> d.id == it.id } }
                 .map { summary ->
@@ -333,6 +486,10 @@ class SyncService(
             updatedAt = summary?.updatedAt,
             message = message,
         )
+    }
+
+    private companion object {
+        const val FORBIDDEN = "\\/:*?\"<>|"
     }
 
     override fun close() {

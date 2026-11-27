@@ -122,7 +122,8 @@ func (s *Store) List() []docSummary {
 		})
 		out = append(out, docSummary{
 			ID: id, Name: d.Name, Version: d.Version, UpdatedAt: d.UpdatedAt,
-			UpdatedByName: s.observerName(d.UpdatedBy), Decohered: d.Decohered, Placements: placements,
+			UpdatedBy: d.UpdatedBy, UpdatedByName: s.observerName(d.UpdatedBy), Decohered: d.Decohered,
+			Placements: placements,
 		})
 	}
 	sort.Slice(out, func(i, j int) bool { return strings.ToLower(out[i].Name) < strings.ToLower(out[j].Name) })
@@ -240,6 +241,43 @@ func (s *Store) Decohere(id string) error {
 	return nil
 }
 
+// Rename changes the document's display name (each PC keeps its own file name).
+func (s *Store) Rename(id, name string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d := s.st.Documents[id]
+	if d == nil {
+		return errNotFound
+	}
+	if d.Decohered {
+		return errGone
+	}
+	old := *d
+	d.Name, d.UpdatedAt = name, s.now()
+	if err := s.save(); err != nil {
+		*d = old
+		return err
+	}
+	return nil
+}
+
+// Resync undoes Decohere: the document is entangled again; observers merge their copies back in.
+func (s *Store) Resync(id string) error {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	d := s.st.Documents[id]
+	if d == nil {
+		return errNotFound
+	}
+	old := *d
+	d.Decohered, d.UpdatedAt = false, s.now()
+	if err := s.save(); err != nil {
+		*d = old
+		return err
+	}
+	return nil
+}
+
 // VersionCount returns how many versions of a document are kept on disk.
 func (s *Store) VersionCount(id string) int {
 	entries, _ := os.ReadDir(s.docDir(id))
@@ -257,7 +295,7 @@ func (s *Store) content(id string) (docContent, error) {
 	}
 	return docContent{
 		ID: id, Name: d.Name, Version: d.Version, Content: string(data),
-		UpdatedAt: d.UpdatedAt, UpdatedByName: s.observerName(d.UpdatedBy),
+		UpdatedAt: d.UpdatedAt, UpdatedBy: d.UpdatedBy, UpdatedByName: s.observerName(d.UpdatedBy),
 	}, nil
 }
 

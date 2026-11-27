@@ -22,6 +22,9 @@ import androidx.compose.material3.AlertDialog
 import androidx.compose.material3.Button
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.DropdownMenu
+import androidx.compose.material3.DropdownMenuItem
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.OutlinedButton
 import androidx.compose.material3.Surface
@@ -65,6 +68,7 @@ fun MainScreen(service: SyncService, window: Frame, onOpenSettings: () -> Unit) 
     val scope = rememberCoroutineScope()
     var error by remember { mutableStateOf<String?>(null) }
     var confirmDecohere by remember { mutableStateOf<DocView?>(null) }
+    var renaming by remember { mutableStateOf<DocView?>(null) }
 
     fun run(action: suspend () -> Unit) {
         scope.launch {
@@ -90,7 +94,7 @@ fun MainScreen(service: SyncService, window: Frame, onOpenSettings: () -> Unit) 
                 }) { Text("Entangle file…") }
                 Spacer(Modifier.width(16.dp))
                 Text(
-                    "${ui.docs.count { it.status != DocStatus.UNOBSERVED }} entangled on this PC",
+                    "${ui.docs.count { it.status != DocStatus.UNOBSERVED && it.status != DocStatus.DESYNCED }} entangled on this PC",
                     style = MaterialTheme.typography.bodyMedium,
                     color = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
@@ -103,7 +107,8 @@ fun MainScreen(service: SyncService, window: Frame, onOpenSettings: () -> Unit) 
                     contentPadding = PaddingValues(start = 24.dp, end = 24.dp, top = 8.dp, bottom = 24.dp),
                     verticalArrangement = Arrangement.spacedBy(12.dp),
                 ) {
-                    items(ui.docs, key = { it.id }) { doc ->
+                    val (desynced, active) = ui.docs.partition { it.status == DocStatus.DESYNCED }
+                    items(active, key = { it.id }) { doc ->
                         DocCard(
                             doc = doc,
                             onShowInFolder = { doc.localPath?.let { WindowsIntegration.showInFolder(Paths.get(it)) } },
@@ -118,7 +123,37 @@ fun MainScreen(service: SyncService, window: Frame, onOpenSettings: () -> Unit) 
                                 chooseFile(window, "Where is ${doc.name} now?", null, doc.name)
                                     ?.let { run { service.relocate(doc.id, it) } }
                             },
+                            onRename = { renaming = doc },
+                            onMove = {
+                                val current = doc.localPath?.let { Paths.get(it) }
+                                if (current != null) {
+                                    chooseSaveLocation(window, "Move ${doc.name} to …", current.parent, current.fileName.toString())
+                                        ?.let { run { service.move(doc.id, it) } }
+                                }
+                            },
+                            onResync = {},
                         )
+                    }
+                    if (desynced.isNotEmpty()) {
+                        item(key = "desynced-header") {
+                            Column(Modifier.padding(top = 12.dp)) {
+                                Text("Desynced", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    "Not synced any more. Every device kept its copy. Re-sync joins them again – " +
+                                        "copies that changed in the meantime are merged, nothing is overwritten.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        items(desynced, key = { it.id }) { doc ->
+                            DocCard(
+                                doc = doc,
+                                onShowInFolder = {}, onOpen = {}, onDecohere = {}, onPlace = {}, onRelocate = {},
+                                onRename = {}, onMove = {},
+                                onResync = { run { service.resync(doc.id) } },
+                            )
+                        }
                     }
                 }
             }
@@ -128,15 +163,47 @@ fun MainScreen(service: SyncService, window: Frame, onOpenSettings: () -> Unit) 
     confirmDecohere?.let { doc ->
         AlertDialog(
             onDismissRequest = { confirmDecohere = null },
-            title = { Text("Decohere ${doc.name}?") },
-            text = { Text("It stops syncing on all observers. The local files stay where they are.") },
+            title = { Text("Desync ${doc.name}?") },
+            text = {
+                Text(
+                    "It stops syncing on ALL devices – every PC and the phone. Each device keeps its current " +
+                        "copy as a normal file, nothing is deleted.\n\nYou can undo this later: “Re-sync” in the " +
+                        "Desynced section joins the copies again and merges what changed in the meantime.",
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     confirmDecohere = null
                     run { service.decohere(doc.id) }
-                }) { Text("Decohere") }
+                }) { Text("Desync everywhere", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { confirmDecohere = null }) { Text("Cancel") } },
+        )
+    }
+
+    renaming?.let { doc ->
+        var name by remember(doc.id) { mutableStateOf(doc.name) }
+        AlertDialog(
+            onDismissRequest = { renaming = null },
+            title = { Text("Rename") },
+            text = {
+                Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    OutlinedTextField(name, { name = it }, singleLine = true, label = { Text("New name") })
+                    Text(
+                        "Renames the file on this PC and the document on all devices. Other PCs rename " +
+                            "their file too, unless they gave it their own name.",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
+            },
+            confirmButton = {
+                TextButton(onClick = {
+                    renaming = null
+                    run { service.rename(doc.id, name) }
+                }) { Text("Rename") }
+            },
+            dismissButton = { TextButton(onClick = { renaming = null }) { Text("Cancel") } },
         )
     }
 }
@@ -210,6 +277,9 @@ private fun DocCard(
     onDecohere: () -> Unit,
     onPlace: () -> Unit,
     onRelocate: () -> Unit,
+    onRename: () -> Unit,
+    onMove: () -> Unit,
+    onResync: () -> Unit,
 ) {
     Card(
         colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surface),
@@ -265,16 +335,42 @@ private fun DocCard(
             Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                 when (doc.status) {
                     DocStatus.UNOBSERVED -> Button(onClick = onPlace) { Text("Place here…") }
+                    DocStatus.DESYNCED -> Button(onClick = onResync) { Text("Re-sync") }
                     DocStatus.LOST -> {
                         Button(onClick = onRelocate) { Text("Relocate…") }
-                        OutlinedButton(onClick = onDecohere) { Text("Decohere") }
+                        MoreMenu(listOf("Desync…" to onDecohere))
                     }
                     else -> {
                         OutlinedButton(onClick = onOpen) { Text("Open") }
                         OutlinedButton(onClick = onShowInFolder) { Text("Show in folder") }
-                        OutlinedButton(onClick = onDecohere) { Text("Decohere") }
+                        MoreMenu(listOf("Rename…" to onRename, "Move…" to onMove, "Desync…" to onDecohere))
                     }
                 }
+            }
+        }
+    }
+}
+
+/** Less frequent actions in a menu, so the dangerous one is never a stray click away. */
+@Composable
+private fun MoreMenu(actions: List<Pair<String, () -> Unit>>) {
+    var open by remember { mutableStateOf(false) }
+    Box {
+        OutlinedButton(onClick = { open = true }) { Text("More ▾") }
+        DropdownMenu(expanded = open, onDismissRequest = { open = false }) {
+            for ((label, action) in actions) {
+                DropdownMenuItem(
+                    text = {
+                        Text(
+                            label,
+                            color = if (label.startsWith("Desync")) MaterialTheme.colorScheme.error else Color.Unspecified,
+                        )
+                    },
+                    onClick = {
+                        open = false
+                        action()
+                    },
+                )
             }
         }
     }
@@ -287,6 +383,7 @@ private fun hint(doc: DocView): String? = when (doc.status) {
     DocStatus.LOST -> "The file is no longer at its place on this PC."
     DocStatus.UNOBSERVED -> "Entangled on another observer, not yet on this PC."
     DocStatus.ERROR -> doc.message
+    DocStatus.DESYNCED -> null
     DocStatus.ENTANGLED -> null
 }
 
@@ -299,6 +396,7 @@ private fun StatusChip(doc: DocView) {
         DocStatus.LOST -> "Lost"
         DocStatus.UNOBSERVED -> "Unobserved"
         DocStatus.ERROR -> "Error"
+        DocStatus.DESYNCED -> "Desynced"
     }
     val color = statusColor(doc.status)
     Surface(color = color.copy(alpha = 0.14f), shape = RoundedCornerShape(50)) {
@@ -318,7 +416,7 @@ private fun statusColor(status: DocStatus): Color = when (status) {
     DocStatus.CHANGES_WAITING -> MaterialTheme.colorScheme.primary
     DocStatus.SUPERPOSITION -> Color(0xFFE08A00)
     DocStatus.LOST, DocStatus.ERROR -> MaterialTheme.colorScheme.error
-    DocStatus.UNOBSERVED -> MaterialTheme.colorScheme.onSurfaceVariant
+    DocStatus.UNOBSERVED, DocStatus.DESYNCED -> MaterialTheme.colorScheme.onSurfaceVariant
 }
 
 private fun time(millis: Long): String {

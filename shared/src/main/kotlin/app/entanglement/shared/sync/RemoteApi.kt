@@ -16,6 +16,12 @@ interface RemoteApi {
     suspend fun push(docId: String, request: PushRequest): PushResult
     suspend fun setPlacement(docId: String, request: PlacementRequest)
     suspend fun decohere(docId: String)
+
+    /** Changes the display name everywhere (each PC keeps its own file name). */
+    suspend fun rename(docId: String, name: String)
+
+    /** Undoes [decohere]: the document is entangled again and every observer merges its copy back in. */
+    suspend fun resync(docId: String)
 }
 
 sealed interface PushResult {

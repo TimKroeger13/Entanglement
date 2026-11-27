@@ -34,6 +34,8 @@ data class DocSummary(
     val updatedAt: Long,
     val updatedByName: String,
     val decohered: Boolean,
+    /** Observer id of the last writer ("" from servers before 1.1). */
+    val updatedBy: String = "",
     val placements: List<Placement>,
 )
 
@@ -46,6 +48,8 @@ data class DocContent(
     val content: String,
     val updatedAt: Long,
     val updatedByName: String,
+    /** Observer id of the last writer ("" from servers before 1.1). */
+    val updatedBy: String = "",
 )
 
 @Serializable
@@ -66,6 +70,9 @@ data class PushRequest(
     val content: String,
     val observerId: String,
 )
+
+@Serializable
+data class RenameRequest(val name: String)
 
 @Serializable
 data class PlacementRequest(val observerId: String, val path: String?)

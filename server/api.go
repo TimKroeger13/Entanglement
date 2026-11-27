@@ -26,6 +26,7 @@ type docSummary struct {
 	Name          string         `json:"name"`
 	Version       int            `json:"version"`
 	UpdatedAt     int64          `json:"updatedAt"`
+	UpdatedBy     string         `json:"updatedBy"`
 	UpdatedByName string         `json:"updatedByName"`
 	Decohered     bool           `json:"decohered"`
 	Placements    []placementDTO `json:"placements"`
@@ -37,6 +38,7 @@ type docContent struct {
 	Version       int    `json:"version"`
 	Content       string `json:"content"`
 	UpdatedAt     int64  `json:"updatedAt"`
+	UpdatedBy     string `json:"updatedBy"`
 	UpdatedByName string `json:"updatedByName"`
 }
 
@@ -57,6 +59,10 @@ type pushRequest struct {
 	BaseVersion int    `json:"baseVersion"`
 	Content     string `json:"content"`
 	ObserverID  string `json:"observerId"`
+}
+
+type renameRequest struct {
+	Name string `json:"name"`
 }
 
 type placementRequest struct {
@@ -153,6 +159,22 @@ func NewHandler(store *Store, token string) http.Handler {
 			return
 		}
 		respond(w, http.StatusNoContent, nil, store.SetPlacement(r.PathValue("id"), req))
+	})
+
+	api.HandleFunc("PUT /api/docs/{id}/name", func(w http.ResponseWriter, r *http.Request) {
+		var req renameRequest
+		if !decode(w, r, &req) {
+			return
+		}
+		if !validName(req.Name) {
+			writeError(w, invalid("invalid document name"))
+			return
+		}
+		respond(w, http.StatusNoContent, nil, store.Rename(r.PathValue("id"), req.Name))
+	})
+
+	api.HandleFunc("POST /api/docs/{id}/resync", func(w http.ResponseWriter, r *http.Request) {
+		respond(w, http.StatusNoContent, nil, store.Resync(r.PathValue("id")))
 	})
 
 	api.HandleFunc("DELETE /api/docs/{id}", func(w http.ResponseWriter, r *http.Request) {

@@ -196,3 +196,25 @@ func TestStateSurvivesRestart(t *testing.T) {
 		t.Fatalf("version file: %q", b)
 	}
 }
+
+func TestRenameAndResync(t *testing.T) {
+	c, _, _ := newServer(t, 50)
+	create(c, "d1", "x\n")
+	c.do("PUT", "/api/docs/d1/name", renameRequest{"Renamed.md"}, 204, nil)
+	c.do("PUT", "/api/docs/d1/name", renameRequest{"  "}, 400, nil)
+	var doc docContent
+	c.do("GET", "/api/docs/d1", nil, 200, &doc)
+	if doc.Name != "Renamed.md" || doc.UpdatedBy != "laptop" {
+		t.Fatalf("after rename: %+v", doc)
+	}
+
+	c.do("DELETE", "/api/docs/d1", nil, 204, nil)
+	c.do("PUT", "/api/docs/d1/name", renameRequest{"Again.md"}, 410, nil)
+	c.do("POST", "/api/docs/d1/resync", nil, 204, nil)
+	var list []docSummary
+	c.do("GET", "/api/docs", nil, 200, &list)
+	if list[0].Decohered {
+		t.Fatal("still decohered after resync")
+	}
+	c.do("PUT", "/api/docs/d1", pushRequest{1, "y\n", "phone"}, 200, nil)
+}

@@ -6,6 +6,7 @@ import app.entanglement.shared.model.DocSummary
 import app.entanglement.shared.model.PlacementRequest
 import app.entanglement.shared.model.PushRequest
 import app.entanglement.shared.model.RegisterObserverRequest
+import app.entanglement.shared.model.RenameRequest
 import io.ktor.client.HttpClient
 import io.ktor.client.call.body
 import io.ktor.client.plugins.HttpResponseValidator
@@ -77,6 +78,14 @@ class HttpRemoteApi(client: HttpClient, baseUrl: String, token: String) : Remote
 
     override suspend fun decohere(docId: String) {
         http.delete("docs/$docId")
+    }
+
+    override suspend fun rename(docId: String, name: String) {
+        http.put("docs/$docId/name") { setBody(RenameRequest(name)) }
+    }
+
+    override suspend fun resync(docId: String) {
+        http.post("docs/$docId/resync")
     }
 
     companion object {
