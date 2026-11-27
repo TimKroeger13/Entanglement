@@ -56,7 +56,6 @@ class MainActivity : ComponentActivity() {
     override fun onStop() {
         super.onStop()
         // Save immediately and let WorkManager push it, even if the app is closed now.
-        repository.flush()
-        repository.requestSync()
+        repository.leaving()
     }
 }

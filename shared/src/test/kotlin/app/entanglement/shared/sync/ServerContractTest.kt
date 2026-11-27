@@ -95,6 +95,24 @@ class ServerContractTest {
     }
 
     @Test
+    fun `rename, desync, re-sync and last writer id`() = contract { api ->
+        val id = newId()
+        SyncEngine(api, laptop).entangle(id, "a.md", "x\n", null)
+        assertEquals(laptop.id, api.get(id).updatedBy)
+        assertEquals(laptop.id, api.list().single { it.id == id }.updatedBy)
+
+        api.rename(id, "Act One.md")
+        assertEquals("Act One.md", api.get(id).name)
+
+        api.decohere(id)
+        assertTrue(api.list().single { it.id == id }.decohered)
+        api.resync(id)
+        assertTrue(!api.list().single { it.id == id }.decohered)
+        assertTrue(api.push(id, PushRequest(1, "y\n", phone.id)) is PushResult.Accepted)
+        assertEquals(phone.id, api.get(id).updatedBy)
+    }
+
+    @Test
     fun `errors map to RemoteException with status`() = contract { api ->
         val id = newId()
         SyncEngine(api, laptop).entangle(id, "a.md", "x\n", null)

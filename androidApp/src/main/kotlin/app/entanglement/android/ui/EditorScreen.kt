@@ -23,6 +23,7 @@ import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
+import androidx.compose.material3.OutlinedTextField
 import androidx.compose.material3.Scaffold
 import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
@@ -63,6 +64,7 @@ fun EditorScreen(repository: Repository, id: String, onBack: () -> Unit) {
     var known by remember { mutableStateOf(repoText) }
     var menu by remember { mutableStateOf(false) }
     var confirmDecohere by remember { mutableStateOf(false) }
+    var renaming by remember { mutableStateOf(false) }
     var error by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
@@ -106,10 +108,17 @@ fun EditorScreen(repository: Repository, id: String, onBack: () -> Unit) {
                     Box {
                         IconButton(onClick = { menu = true }) { Icon(Icons.More, contentDescription = "More") }
                         DropdownMenu(expanded = menu, onDismissRequest = { menu = false }) {
-                            DropdownMenuItem(text = { Text("Decohere…") }, onClick = {
+                            DropdownMenuItem(text = { Text("Rename…") }, onClick = {
                                 menu = false
-                                confirmDecohere = true
+                                renaming = true
                             })
+                            DropdownMenuItem(
+                                text = { Text("Desync…", color = MaterialTheme.colorScheme.error) },
+                                onClick = {
+                                    menu = false
+                                    confirmDecohere = true
+                                },
+                            )
                         }
                     }
                 },
@@ -155,11 +164,25 @@ fun EditorScreen(repository: Repository, id: String, onBack: () -> Unit) {
         }
     }
 
+    if (renaming) {
+        RenameDialog(
+            current = doc?.name ?: "",
+            onRename = { repository.rename(id, it) },
+            onDismiss = { renaming = false },
+        )
+    }
+
     if (confirmDecohere) {
         AlertDialog(
             onDismissRequest = { confirmDecohere = false },
-            title = { Text("Decohere ${doc?.name}?") },
-            text = { Text("It stops syncing on all observers. Files on your PCs stay where they are.") },
+            title = { Text("Desync ${doc?.name}?") },
+            text = {
+                Text(
+                    "It stops syncing on ALL devices – every PC and this phone. Each device keeps its current " +
+                        "copy, nothing is deleted.\n\nYou can undo it later with “Re-sync” in the list; copies " +
+                        "that changed in the meantime are merged.",
+                )
+            },
             confirmButton = {
                 TextButton(onClick = {
                     confirmDecohere = false
@@ -171,11 +194,45 @@ fun EditorScreen(repository: Repository, id: String, onBack: () -> Unit) {
                             error = e.message
                         }
                     }
-                }) { Text("Decohere") }
+                }) { Text("Desync everywhere", color = MaterialTheme.colorScheme.error) }
             },
             dismissButton = { TextButton(onClick = { confirmDecohere = false }) { Text("Cancel") } },
         )
     }
+}
+
+@Composable
+private fun RenameDialog(current: String, onRename: suspend (String) -> Unit, onDismiss: () -> Unit) {
+    var name by remember { mutableStateOf(current) }
+    var error by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+    AlertDialog(
+        onDismissRequest = onDismiss,
+        title = { Text("Rename") },
+        text = {
+            OutlinedTextField(
+                name,
+                { name = it; error = null },
+                singleLine = true,
+                label = { Text("New name") },
+                isError = error != null,
+                supportingText = { Text(error ?: "Renamed on all devices; PCs rename their file too.") },
+            )
+        },
+        confirmButton = {
+            TextButton(onClick = {
+                scope.launch {
+                    try {
+                        onRename(name)
+                        onDismiss()
+                    } catch (e: UserError) {
+                        error = e.message
+                    }
+                }
+            }) { Text("Rename") }
+        },
+        dismissButton = { TextButton(onClick = onDismiss) { Text("Cancel") } },
+    )
 }
 
 /** Shows the two versions of the first superposition; one tap keeps one of them ("measuring"). */

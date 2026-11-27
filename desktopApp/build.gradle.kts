@@ -39,7 +39,7 @@ compose.desktop {
         nativeDistributions {
             targetFormats(TargetFormat.Msi)
             packageName = "Entanglement"
-            packageVersion = "1.0.1"
+            packageVersion = "1.1.0"
             description = "Entangled Markdown files"
             vendor = "Entanglement"
             modules("java.naming", "jdk.unsupported")

@@ -68,14 +68,15 @@ class RepositoryTest {
         val phone = phone()
         phone.syncAll()
         phone.edit(id, "Scene 1, written on the train\n")
+        assertEquals(DocStatus.ENTANGLED, phone.ui.value.docs.single().status, "not yet published")
         advanceUntilIdle()
-        assertTrue(syncSoonCalls > 0)
+        // Saved, then synced by the app itself – WorkManager is only for when the app is left.
         assertEquals("Scene 1, written on the train\n", File(dir, "docs/$id.md").readText())
-        assertEquals(DocStatus.CHANGES_WAITING, phone.ui.value.docs.single().status)
-
-        phone.syncAll()
         assertEquals("Scene 1, written on the train\n", server.docs.getValue(id).content)
         assertEquals(DocStatus.ENTANGLED, phone.ui.value.docs.single().status)
+        assertEquals(0, syncSoonCalls)
+        phone.leaving()
+        assertEquals(1, syncSoonCalls)
     }
 
     @Test
@@ -157,8 +158,64 @@ class RepositoryTest {
         phone.syncAll()
         server.decohere(id)
         phone.syncAll()
-        assertTrue(phone.ui.value.docs.isEmpty())
+        assertEquals(DocStatus.DESYNCED, phone.ui.value.docs.single().status)
         assertEquals("Keep me\n", File(dir, "decohered/$id.md").readText())
+    }
+
+    @Test
+    fun `rename works offline and reaches the server later`() = runTest {
+        val id = laptopEntangles("Text\n")
+        val phone = phone()
+        phone.syncAll()
+        server.offline = true
+        phone.rename(id, "Train novel")
+        assertEquals("Train novel.md", phone.ui.value.docs.single().name)
+        server.offline = false
+        phone.syncAll()
+        assertEquals("Train novel.md", server.docs.getValue(id).name)
+    }
+
+    @Test
+    fun `a rename on another device shows up on the phone`() = runTest {
+        val id = laptopEntangles("Text\n")
+        val phone = phone()
+        phone.syncAll()
+        server.rename(id, "Act One.md")
+        phone.syncAll()
+        assertEquals("Act One.md", phone.ui.value.docs.single().name)
+    }
+
+    @Test
+    fun `desync and re-sync bring the phone copy back and merge it`() = runTest {
+        val id = laptopEntangles("Scene 1\nScene 2\nScene 3\n")
+        val phone = phone()
+        phone.syncAll()
+        phone.edit(id, "Scene 1\nScene 2\nScene 3\n")
+        phone.decohere(id)
+        assertEquals(DocStatus.DESYNCED, phone.ui.value.docs.single().status)
+
+        // While desynced the laptop goes on; the phone's archived copy also had an earlier edit.
+        server.resync(id)
+        server.editAs("laptop", id, "Scene 1 – laptop\nScene 2\nScene 3\n")
+        File(dir, "decohered/$id.md").writeText("Scene 1\nScene 2\nScene 3 – phone\n")
+
+        phone.syncAll()
+        val merged = "Scene 1 – laptop\nScene 2\nScene 3 – phone\n"
+        assertEquals(merged, phone.text(id).value)
+        assertEquals(merged, server.docs.getValue(id).content)
+        assertEquals(DocStatus.ENTANGLED, phone.ui.value.docs.single().status)
+    }
+
+    @Test
+    fun `re-sync from the phone`() = runTest {
+        val id = laptopEntangles("Text\n")
+        val phone = phone()
+        phone.syncAll()
+        phone.decohere(id)
+        phone.resync(id)
+        advanceUntilIdle()
+        assertEquals(DocStatus.ENTANGLED, phone.ui.value.docs.single().status)
+        assertEquals("Text\n", phone.text(id).value)
     }
 
     @Test

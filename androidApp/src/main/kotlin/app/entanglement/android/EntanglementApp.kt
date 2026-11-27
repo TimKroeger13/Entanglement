@@ -55,14 +55,17 @@ class WorkScheduler(private val context: Context) : SyncScheduler {
 
     private val online = Constraints.Builder().setRequiredNetworkType(NetworkType.CONNECTED).build()
 
-    /** A few seconds after the last edit (each edit pushes it back), or as soon as there is network. */
+    /**
+     * Soon after the app went to the background, or as soon as there is network. KEEP: a running or
+     * waiting sync is never cancelled (cancelling one mid-push is what used to cause self-conflicts).
+     */
     override fun syncSoon() {
         val request = OneTimeWorkRequestBuilder<SyncWorker>()
             .setInitialDelay(3, TimeUnit.SECONDS)
             .setConstraints(online)
             .setBackoffCriteria(BackoffPolicy.EXPONENTIAL, 30, TimeUnit.SECONDS)
             .build()
-        WorkManager.getInstance(context).enqueueUniqueWork("sync-soon", ExistingWorkPolicy.REPLACE, request)
+        WorkManager.getInstance(context).enqueueUniqueWork("sync-soon", ExistingWorkPolicy.KEEP, request)
     }
 
     /** Every 15 minutes (Android's minimum), to fetch what other observers wrote. */

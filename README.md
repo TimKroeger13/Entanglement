@@ -13,7 +13,7 @@ connection again. A tiny self-hosted server sits in the middle; plain text needs
 | In the app | Meaning |
 |---|---|
 | **Entangle** | Start syncing a file. It stays where it is on your PC. |
-| **Decohere** | Stop syncing a file. Local copies are kept. |
+| **Desync** | Stop syncing a file on all devices. Every copy is kept; **Re-sync** joins them again and merges what changed meanwhile. |
 | **Observer** | One of your devices (e.g. "Desktop", "Laptop", "Phone"). |
 | **Unobserved** | Entangled elsewhere, but not yet placed on this device. |
 | **Superposition** | The same lines were changed differently on two devices. Both versions are kept in the file. |
@@ -131,7 +131,8 @@ There you can also enable:
 - **“Entangle” in the Explorer context menu** for `.md` files (Windows 11: under “Show more options”)
 - **Start with Windows** (runs in the tray)
 
-Every entangled file shows where it lives on each observer. A file entangled on another device appears as
+Every entangled file shows where it lives on each observer. **Rename…**, **Move…** and **Desync…** are in the
+*More* menu; renaming a file in Explorer or an editor is noticed and followed. A file entangled on another device appears as
 *unobserved* – **Place here…** puts a copy on this PC (an existing file at that spot is merged, never overwritten).
 Settings and state live in `%APPDATA%\Entanglement`.
 
@@ -148,7 +149,9 @@ All routes except `/health` require `Authorization: Bearer <ENTANGLEMENT_TOKEN>`
 | `GET` | `/api/docs/{id}` | Document with content |
 | `PUT` | `/api/docs/{id}` | Push a new version; `409` with the current document if `baseVersion` is outdated |
 | `PUT` | `/api/docs/{id}/placement` | Set where the document lives on an observer |
-| `DELETE` | `/api/docs/{id}` | Decohere |
+| `PUT` | `/api/docs/{id}/name` | Rename (display name; PCs rename their file if it still has the old name) |
+| `DELETE` | `/api/docs/{id}` | Desync (the document stays, marked as desynced) |
+| `POST` | `/api/docs/{id}/resync` | Undo a desync |
 
 ## Development
 

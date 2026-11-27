@@ -60,6 +60,7 @@ fun ListScreen(repository: Repository, onOpen: (String) -> Unit, onSettings: () 
     val ui by repository.ui.collectAsStateWithLifecycle()
     var refreshing by remember { mutableStateOf(false) }
     var creating by remember { mutableStateOf(false) }
+    var resyncError by remember { mutableStateOf<String?>(null) }
     val scope = rememberCoroutineScope()
 
     Scaffold(
@@ -96,14 +97,60 @@ fun ListScreen(repository: Repository, onOpen: (String) -> Unit, onSettings: () 
             if (ui.docs.isEmpty()) {
                 EmptyState()
             } else {
+                val (desynced, active) = ui.docs.partition { it.status == DocStatus.DESYNCED }
                 LazyColumn(contentPadding = PaddingValues(bottom = 96.dp)) {
-                    items(ui.docs, key = { it.id }) { doc ->
+                    items(active, key = { it.id }) { doc ->
                         DocRow(doc, onClick = { onOpen(doc.id) })
                         HorizontalDivider(color = MaterialTheme.colorScheme.outlineVariant)
+                    }
+                    if (desynced.isNotEmpty()) {
+                        item(key = "desynced-header") {
+                            Column(Modifier.padding(start = 20.dp, end = 20.dp, top = 24.dp, bottom = 4.dp)) {
+                                Text("Desynced", style = MaterialTheme.typography.titleSmall)
+                                Text(
+                                    "Not synced any more; every device kept its copy. Re-sync joins them again " +
+                                        "and merges what changed meanwhile.",
+                                    style = MaterialTheme.typography.bodySmall,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                )
+                            }
+                        }
+                        items(desynced, key = { it.id }) { doc ->
+                            Row(
+                                Modifier.fillMaxWidth().padding(start = 20.dp, end = 8.dp, top = 4.dp, bottom = 4.dp),
+                                verticalAlignment = Alignment.CenterVertically,
+                            ) {
+                                Text(
+                                    doc.name,
+                                    Modifier.weight(1f),
+                                    style = MaterialTheme.typography.titleMedium,
+                                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                                    maxLines = 1,
+                                    overflow = TextOverflow.Ellipsis,
+                                )
+                                TextButton(onClick = {
+                                    scope.launch {
+                                        try {
+                                            repository.resync(doc.id)
+                                        } catch (e: UserError) {
+                                            resyncError = e.message
+                                        }
+                                    }
+                                }) { Text("Re-sync") }
+                            }
+                        }
                     }
                 }
             }
         }
+    }
+
+    resyncError?.let {
+        AlertDialog(
+            onDismissRequest = { resyncError = null },
+            text = { Text(it) },
+            confirmButton = { TextButton(onClick = { resyncError = null }) { Text("OK") } },
+        )
     }
 
     if (creating) {
@@ -167,7 +214,7 @@ private fun DocRow(doc: DocItem, onClick: () -> Unit) {
 @Composable
 fun StatusChip(doc: DocItem) {
     val (label, color) = when (doc.status) {
-        DocStatus.ENTANGLED -> return
+        DocStatus.ENTANGLED, DocStatus.DESYNCED -> return
         DocStatus.CHANGES_WAITING -> "Waiting" to MaterialTheme.colorScheme.primary
         DocStatus.SUPERPOSITION ->
             (if (doc.superpositions > 1) "Superposition ×${doc.superpositions}" else "Superposition") to Amber
